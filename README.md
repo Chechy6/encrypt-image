@@ -1,12 +1,24 @@
 
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <iomanip>
+#include <stdio.h>
+#include <gmp.h>
+#include <gmpxx.h>
+#include <paillier.h>
+#include<windows.h>
+using namespace std;
+
 class Readfile{
 
 public:
 
-  int width, height, size;
-  unsigned char* ReadBMP(char* filename);
-  string strnum;
-  unsigned short rgb_values[];
+    unsigned long long int width, height, size;
+    unsigned char* ReadBMP(char* filename);
+    string strnum;
+    unsigned short rgb_values[];
 
 };
 
@@ -31,29 +43,15 @@ cout << "Width: " << width << endl;
 cout << "Height: " << height << endl;
 
     size = 3 * width * height;
-    unsigned short rgb_values[size];
-    unsigned char* data = new unsigned char[size]; // allocate 3 bytes per pixel
-    fread(data, sizeof(unsigned char), size, f); // read the rest of the data
-
-//switch BGR to RGB
-for(int i = 0; i < size; i += 3)
-    {
-            unsigned char tmp = data[i];
-            data[i] = data[i+2];
-            data[i+2] = tmp;
-
-            rgb_values[i] = (short)data[i];
-            rgb_values[i+1] = (short)data[i+1];
-            rgb_values[i+2] = (short)data[i+2];
-
-}
+    unsigned char* data = new unsigned char[size];
+    fread(data, sizeof(unsigned char), size, f);
 
 //put all RGB values into a single string strnum
 std::ostringstream oss;
 
-        for (int k=0; k < sizeof(rgb_values)/sizeof(rgb_values[0]); k ++)
+        for (unsigned long long int k=0; k < size; k ++)
             {
-            oss << setfill('0') << setw(3) << rgb_values[k];
+            oss << setfill('0') << setw(3) << (short) data[k];
             }
 
     strnum = oss.str();
@@ -63,34 +61,6 @@ return data;
 }
 
 
-bool Writefile (unsigned char t[])
-{
-
-    FILE* r = fopen("D:\\CodelocksProject\\32x32.bmp", "rb");
-    if(r == NULL) throw "Argument Exception";
-
-unsigned char info[54];
-
-fread(info, sizeof(unsigned char), 54, r); // read the 54-byte header
-
-    FILE * w = fopen ("decrypted.bmp", "w");
-
-       fwrite((int*)&info,sizeof(unsigned char),54,w);
-
-
-unsigned char inf[54];
-
-fread(inf, sizeof(unsigned char), 54, r); cout <<"FileHeader: ";
-for (int i= 0; i<54; i++)
-    {
-        cout << *(int*)&inf[i]<<" ";
-    }
-fwrite(t,sizeof(unsigned char),sizeof(t)/sizeof(t[0]),w);
-fclose(w);
-
-return true;
-
-}
 
 //a function, returning "random" seed
     void get_rand(void* buf, int len)
@@ -150,36 +120,35 @@ return true;
 
 
 
-
-
 int main()
 {
     //reading the .bmp file
     Readfile r;
-    r.ReadBMP("D:/CodelocksProject/32x32.bmp");
+    r.ReadBMP("D:/CodelocksProject/1024x1024.bmp");
 
     string text;
     text = r.strnum;
     FILE * pFile;
     pFile = fopen ("encrypted.bin", "wb");
-    int N = text.length();
-    int M = text.length()/128;
     string buffer;
     void* buf1;
-    int at, pre=0, i;
+    unsigned long long int i;
 
+
+cout<< "Text length: "<< text.length()<<endl;
 
     paillier_pubkey_t* pub;//The public key
     paillier_prvkey_t* prv;//The private key
 
-        paillier_keygen(1024, &pub, &prv, get_rand);
+        paillier_keygen(1024, &pub, &prv, get_rand); //generate keys
+int broi = 0;
 
-      //encrypting the values with length 256 bytes
-     for (i = 0; i < M; ++i)
+      //encrypting the values with length 128 bytes
+     for (i = 0; i < text.length(); i+=128)
         {
-          at = (N+N*i)/M;
 
-            buffer =  text.substr(pre, at-pre);
+
+            buffer =  text.substr(i,128);
 
             paillier_plaintext_t* a = paillier_plaintext_from_str(buffer.c_str());
             paillier_ciphertext_t* ca = paillier_enc(0, pub, a, get_rand);
@@ -189,14 +158,15 @@ int main()
             fwrite(buf1, 1, PAILLIER_BITS_TO_BYTES(pub->bits)*2, pFile);
 
             free(buf1);
+        broi++;
 
-            pre = at;
         }
 
+cout << "Number of values: " << broi<<endl;
         fclose (pFile);
 
 
-cout << "Values length in bytes: " << buffer.size() << endl;
+cout << "Last value length in bytes: " << buffer.size() << endl;
 
 
 //Decryption
@@ -208,7 +178,7 @@ cout << "Values length in bytes: " << buffer.size() << endl;
     fseek (pFile , 0 , SEEK_END);
     lSize = ftell (pFile);
     rewind (pFile);
-    qFile = fopen ("example.bin", "wb");
+    qFile = fopen ("example.txt", "wb");
     char * buff;
     void * buf2;
     size_t result;
@@ -220,12 +190,12 @@ cout << "Values length in bytes: " << buffer.size() << endl;
 
 
 // separating the encrypted values, decrypting and writing them into .bin file
-    for (pre = 0,i = 0; i < M; ++i)
+    for (i = 0; i < text.length(); i+=128)
         {
-            at = (N+N*i)/M;
+
 
         void * f;
-        f = (char*) &buff[pre*2];
+        f = (char*) &buff[i*2];
 
         paillier_ciphertext_t* cb = paillier_ciphertext_from_bytes(f,PAILLIER_BITS_TO_BYTES(pub->bits)*2);
         paillier_plaintext_t* b = paillier_dec(0,pub,prv,cb);
@@ -233,46 +203,47 @@ cout << "Values length in bytes: " << buffer.size() << endl;
           buf2 = paillier_plaintext_to_bytes(PAILLIER_BITS_TO_BYTES(pub->bits)*2,b);
           fwrite(buf2, 1, PAILLIER_BITS_TO_BYTES(pub->bits)*2, qFile);
 
-            pre = at;
+
             free(buf2);
         }
+
+
+
 
 fclose (qFile);
 
 //put the decrypted data into one string
-std::ifstream ifs("example.bin");
-std::string str( (std::istreambuf_iterator<char>(ifs) ),(std::istreambuf_iterator<char>()));
+ifstream ifs("example.txt");
+string str( (istreambuf_iterator<char>(ifs) ),(istreambuf_iterator<char>()));
 ifs.close();
 
 
 //removing white spaces
-std::string str1 = str;
-str1.erase(std::remove(str1.begin(), str1.end(), NULL), str1.end());
+string str1 = str;
+str1.erase(remove(str1.begin(), str1.end(), NULL), str1.end());
 
+cout << "Length str: "<<str.length()<<endl;
+cout << "Length str1: "<<str1.length()<<endl;
 
 //converting the string into unsigned char array
-          unsigned char usc[str1.size()/3];
-
-        for (int k = 3; k <=(str1.size() - 3) ; k+=3)
+          unsigned char usc[(str1.size()/3)];
+int broi2 = 0;
+short t;
+        for (unsigned long long int k = 0; k <(str1.size()) ; k+=3)
             {
                 ostringstream oss;
                 oss << str1[k] << str1[k+1] << str1[k+2];
                 istringstream iss(oss.str());
-               short t;
-               iss >> t;
+                iss >> t;
                 usc[k/3] = (unsigned char) t;
 
+            broi2+=3;
             }
+cout << "Char array: "<<broi2<<endl;
 
-//switching RGB to BGR for the new .bmp file
-        for(int i = 0; i < str1.size()/3 ; i += 3)
-            {
-            unsigned char tmp = usc[i];
-            usc[i] = usc[i+2];
-            usc[i+2] = tmp;
-            }
+cout << sizeof(usc)/sizeof(usc[0]);
 
-        cout << str1;
+
         SaveImage("decrypted.bmp",usc,r.width,r.height);
 
         //remove("example.bin");
@@ -282,3 +253,5 @@ str1.erase(std::remove(str1.begin(), str1.end(), NULL), str1.end());
 
     return 0;
 }
+
+
